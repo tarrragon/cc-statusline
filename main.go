@@ -217,24 +217,13 @@ func main() {
 
 	// Project name
 	projectDir := ""
-	currentDir := ""
 	projectName := ""
 	if d.Workspace != nil {
 		projectDir = d.Workspace.ProjectDir
-		currentDir = d.Workspace.CurrentDir
 		if projectDir != "" {
 			projectName = filepath.Base(projectDir)
 		}
 	}
-
-	// Current git branch (live detection)
-	currentBranch := ""
-	if currentDir != "" {
-		currentBranch = git(currentDir, "rev-parse", "--abbrev-ref", "HEAD")
-	}
-
-	// Detect if current dir is a worktree (different from project root)
-	isWorktree := currentDir != "" && projectDir != "" && currentDir != projectDir
 
 	// Model
 	model := d.Model.DisplayName
@@ -252,21 +241,6 @@ func main() {
 	line1 := ""
 	if projectName != "" {
 		line1 += fmt.Sprintf("%s%s%s", blue, projectName, reset)
-	}
-
-	// Branch info
-	if currentBranch != "" {
-		if line1 != "" {
-			line1 += sep
-		}
-		branchColor := cyan
-		if isWorktree {
-			branchColor = magenta
-		}
-		line1 += fmt.Sprintf("%s%s%s", branchColor, currentBranch, reset)
-		if isWorktree {
-			line1 += fmt.Sprintf(" %s(worktree)%s", dim, reset)
-		}
 	}
 
 	// IME + Caps Lock
