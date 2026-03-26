@@ -178,6 +178,29 @@ func formatWorktreeAlert(wt WorktreeStatus) string {
 	return fmt.Sprintf("%s%s%s %s", dim, name, reset, strings.Join(parts, " "))
 }
 
+func getIMEStatus() (string, bool) {
+	// Call macOS helper binary for input method + caps lock
+	// Try: same dir as binary, then PATH
+	exePath, _ := os.Executable()
+	helperPath := filepath.Join(filepath.Dir(exePath), "ime-helper")
+	if _, err := os.Stat(helperPath); err != nil {
+		helperPath = "ime-helper" // fallback to PATH
+	}
+	cmd := exec.Command(helperPath)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return "", false
+	}
+	result := strings.TrimSpace(out.String())
+	parts := strings.SplitN(result, "|", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	return parts[0], parts[1] == "true"
+}
+
 func weekday(t time.Time) string {
 	days := []string{"日", "月", "火", "水", "木", "金", "土"}
 	return days[t.Weekday()]
@@ -243,6 +266,18 @@ func main() {
 		line1 += fmt.Sprintf("%s%s%s", branchColor, currentBranch, reset)
 		if isWorktree {
 			line1 += fmt.Sprintf(" %s(worktree)%s", dim, reset)
+		}
+	}
+
+	// IME + Caps Lock
+	imeName, capsOn := getIMEStatus()
+	if imeName != "" {
+		if line1 != "" {
+			line1 += sep
+		}
+		line1 += fmt.Sprintf("%s%s%s", dim, imeName, reset)
+		if capsOn {
+			line1 += fmt.Sprintf(" %sCAPS%s", red, reset)
 		}
 	}
 
