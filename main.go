@@ -66,6 +66,8 @@ const (
 	blue    = "\033[34m"
 	magenta = "\033[35m"
 	cyan    = "\033[36m"
+	bgRed   = "\033[41m"
+	white   = "\033[37m"
 )
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -331,6 +333,92 @@ func getIMEStatus() (string, bool) {
 	return parts[0], parts[1] == "true"
 }
 
+// looksLikeProduction returns true if the name suggests a production environment.
+func looksLikeProduction(name string) bool {
+	lower := strings.ToLower(name)
+	for _, keyword := range []string{"prod", "production", "prd", "live"} {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// envLabel formats an environment label, using red background for production-like names.
+func envLabel(prefix, name string) string {
+	if looksLikeProduction(name) {
+		return fmt.Sprintf("%s %s:%s %s", bgRed+white+bold, prefix, name, reset)
+	}
+	return fmt.Sprintf("%s%s:%s%s", cyan, prefix, name, reset)
+}
+
+// getEnvContexts detects SSH, Kubernetes, and Docker environments.
+func getEnvContexts() []string {
+	var contexts []string
+
+	// SSH detection
+	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
+		host, _ := os.Hostname()
+		if host == "" {
+			host = "remote"
+		}
+		contexts = append(contexts, envLabel("SSH", host))
+	}
+
+	// Kubernetes context detection
+	if k8sCtx := getK8sContext(); k8sCtx != "" {
+		contexts = append(contexts, envLabel("k8s", k8sCtx))
+	}
+
+	// Docker context detection
+	if dockerCtx := getDockerContext(); dockerCtx != "" {
+		contexts = append(contexts, envLabel("docker", dockerCtx))
+	}
+
+	return contexts
+}
+
+func getK8sContext() string {
+	// Fast path: check if kubectl is likely available
+	cmd := exec.Command("kubectl", "config", "current-context")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	ctx := strings.TrimSpace(out.String())
+	if ctx == "" {
+		return ""
+	}
+	return ctx
+}
+
+func getDockerContext() string {
+	// Check DOCKER_HOST first (explicit remote docker)
+	if host := os.Getenv("DOCKER_HOST"); host != "" {
+		// Strip protocol prefix for display
+		display := host
+		for _, prefix := range []string{"tcp://", "ssh://", "unix://"} {
+			display = strings.TrimPrefix(display, prefix)
+		}
+		return display
+	}
+	// Check docker context if not default
+	cmd := exec.Command("docker", "context", "show")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	ctx := strings.TrimSpace(out.String())
+	if ctx == "" || ctx == "default" {
+		return ""
+	}
+	return ctx
+}
+
 func weekday(t time.Time) string {
 	days := []string{"日", "月", "火", "水", "木", "金", "土"}
 	return days[t.Weekday()]
@@ -371,6 +459,15 @@ func main() {
 	line1 := ""
 	if projectName != "" {
 		line1 += fmt.Sprintf("%s%s%s", blue, projectName, reset)
+	}
+
+	// Environment context alerts (SSH, K8s, Docker)
+	envContexts := getEnvContexts()
+	for _, ctx := range envContexts {
+		if line1 != "" {
+			line1 += sep
+		}
+		line1 += ctx
 	}
 
 	// IME + Caps Lock
