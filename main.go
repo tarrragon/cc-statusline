@@ -258,7 +258,7 @@ func main() {
 		}
 		if r := rl.SevenDay; r != nil {
 			c := colorByPct(r.UsedPercentage)
-			line1 += sep + fmt.Sprintf("%s7d: %.0f%%%s %s%s%s", c, r.UsedPercentage, reset, dim, resetTime(r.ResetsAt), reset)
+			line1 += sep + fmt.Sprintf("%sweek: %s %.0f%%%s", c, bar(r.UsedPercentage, 5), r.UsedPercentage, reset)
 		}
 	}
 
