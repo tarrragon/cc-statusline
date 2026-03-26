@@ -7,10 +7,14 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
+	"unicode/utf8"
+	"unsafe"
 )
 
 type StatusData struct {
@@ -63,6 +67,110 @@ const (
 	magenta = "\033[35m"
 	cyan    = "\033[36m"
 )
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func getTermWidth() int {
+	type winsize struct {
+		Row, Col, Xpixel, Ypixel uint16
+	}
+	ws := &winsize{}
+	// Use stderr (fd 2) since stdin is a pipe for JSON input
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, 2, syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(ws)))
+	if errno != 0 || ws.Col == 0 {
+		return 120
+	}
+	return int(ws.Col)
+}
+
+// visibleLen returns the display width of a string, excluding ANSI escape codes.
+// CJK characters count as 2 columns.
+func visibleLen(s string) int {
+	clean := ansiRe.ReplaceAllString(s, "")
+	n := 0
+	for _, r := range clean {
+		if r >= 0x1100 && isCJKOrWide(r) {
+			n += 2
+		} else if r >= 0x2580 && r <= 0x259F {
+			// Block elements (▓░) are typically 1 column in monospace terminals
+			n++
+		} else {
+			n++
+		}
+	}
+	return n
+}
+
+func isCJKOrWide(r rune) bool {
+	// Common CJK and wide character ranges
+	return (r >= 0x1100 && r <= 0x115F) || // Hangul Jamo
+		(r >= 0x2E80 && r <= 0x303E) || // CJK Radicals, Kangxi, CJK Symbols
+		(r >= 0x3040 && r <= 0x33BF) || // Hiragana, Katakana, CJK Compat
+		(r >= 0x3400 && r <= 0x4DBF) || // CJK Unified Extension A
+		(r >= 0x4E00 && r <= 0x9FFF) || // CJK Unified
+		(r >= 0xA960 && r <= 0xA97F) || // Hangul Jamo Extended-A
+		(r >= 0xAC00 && r <= 0xD7FF) || // Hangul Syllables
+		(r >= 0xF900 && r <= 0xFAFF) || // CJK Compat Ideographs
+		(r >= 0xFE30 && r <= 0xFE6F) || // CJK Compat Forms
+		(r >= 0xFF01 && r <= 0xFF60) || // Fullwidth Forms
+		(r >= 0xFFE0 && r <= 0xFFE6) || // Fullwidth Signs
+		(r >= 0x20000 && r <= 0x2FA1F) // CJK Extensions B-F, Compat Supplement
+}
+
+// truncateToWidth truncates a string with ANSI codes to fit within maxWidth visible columns.
+// Appends "…" if truncated and ensures all opened ANSI codes are closed.
+func truncateToWidth(s string, maxWidth int) string {
+	if visibleLen(s) <= maxWidth {
+		return s
+	}
+
+	var buf strings.Builder
+	vis := 0
+	target := maxWidth - 1 // reserve 1 col for "…"
+	i := 0
+	raw := []byte(s)
+	openCodes := []string{} // track unclosed ANSI codes
+
+	for i < len(raw) && vis < target {
+		// Check for ANSI escape sequence
+		if raw[i] == 0x1b && i+1 < len(raw) && raw[i+1] == '[' {
+			j := i + 2
+			for j < len(raw) && raw[j] != 'm' {
+				j++
+			}
+			if j < len(raw) {
+				code := string(raw[i : j+1])
+				buf.WriteString(code)
+				// Track opening/reset codes
+				if code == reset {
+					openCodes = nil
+				} else {
+					openCodes = append(openCodes, code)
+				}
+				i = j + 1
+				continue
+			}
+		}
+
+		r, size := utf8.DecodeRune(raw[i:])
+		w := 1
+		if r >= 0x1100 && isCJKOrWide(r) {
+			w = 2
+		}
+		if vis+w > target {
+			break
+		}
+		buf.Write(raw[i : i+size])
+		vis += w
+		i += size
+	}
+
+	buf.WriteString("…")
+	if len(openCodes) > 0 {
+		buf.WriteString(reset)
+	}
+	return buf.String()
+}
 
 func colorByPct(pct float64) string {
 	switch {
@@ -300,7 +408,8 @@ func main() {
 		}
 	}
 
-	fmt.Println(line1)
+	termWidth := getTermWidth()
+	fmt.Println(truncateToWidth(line1, termWidth))
 
 	// === Line 2: worktree alerts (only those with dirty/unpushed) ===
 	if projectDir != "" {
@@ -312,7 +421,7 @@ func main() {
 			}
 		}
 		if len(alerts) > 0 {
-			fmt.Println(strings.Join(alerts, sep))
+			fmt.Println(truncateToWidth(strings.Join(alerts, sep), termWidth))
 		}
 	}
 }

@@ -3,5 +3,8 @@ cc-statusline
 statusline
 ime-helper
 
+# Local config
+.claude/
+
 # OS
 .DS_Store
