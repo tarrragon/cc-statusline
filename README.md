@@ -5,21 +5,24 @@ A custom status line for [Claude Code](https://claude.ai/code), written in Go.
 Displays real-time session info at the bottom of your terminal:
 
 ```
-ccsession | main | Opus 4.6 | ▓▓░░░░░░ 15% | 5h: 22% 2h29m (22:49)
-main ~2 ^1 | feat-branch ~8
+ccsession | ABC | Opus 4.6 | context: 15% | 5h: 22% (22:49) | week: ▓▓▓░░ 57% (日20:35)
+main ~2 ^3 | feat-branch ~8 v2
 ```
 
 ## Features
 
-- **Model name** — current Claude model
-- **Context window** — usage percentage with color-coded progress bar (green/yellow/red)
-- **Rate limits** — 5-hour and 7-day usage with reset countdown and local time
-- **Git branch** — live detection via `git`, works even when switching mid-session
-- **Worktree awareness** — detects worktree sessions, shows `(worktree)` indicator
-- **Multi-worktree alerts** — scans ALL worktrees for uncommitted changes (`~N`) and unpushed commits (`^N`)
 - **Project name** — derived from workspace directory
+- **Input method** — current IME name (macOS, Linux, Windows)
+- **Caps Lock** — red `CAPS` indicator when active
+- **Model name** — current Claude model
+- **Context window** — usage percentage with color coding
+- **Rate limits** — 5-hour usage with reset time, weekly usage with progress bar and Japanese weekday reset time
+- **Multi-worktree alerts** — scans ALL worktrees for:
+  - Uncommitted changes (`~N`)
+  - Unpushed commits (`^N`)
+  - Unpulled commits from remote (`vN`)
 
-Zero external dependencies — only Go standard library and `git` CLI.
+Zero external dependencies — only Go standard library and `git` CLI (plus a small Swift helper for macOS IME detection).
 
 ## Install
 
@@ -40,10 +43,13 @@ git clone https://github.com/tarrragon/cc-statusline.git
 cd cc-statusline
 go build -o cc-statusline .
 
-# Install to a location in your PATH
-cp cc-statusline /usr/local/bin/
+# Build the IME helper (macOS only)
+swiftc -O helper_darwin.swift -o ime-helper
+
+# Install both binaries to the same directory
+cp cc-statusline ime-helper /usr/local/bin/
 # or
-cp cc-statusline ~/.local/bin/
+cp cc-statusline ime-helper ~/.local/bin/
 ```
 
 #### Linux
@@ -53,15 +59,15 @@ git clone https://github.com/tarrragon/cc-statusline.git
 cd cc-statusline
 go build -o cc-statusline .
 
-# Install system-wide
-sudo cp cc-statusline /usr/local/bin/
-# or user-local
+# Install binary and helper script
 mkdir -p ~/.local/bin
-cp cc-statusline ~/.local/bin/
+cp cc-statusline helper_linux.sh ~/.local/bin/
 
 # Ensure ~/.local/bin is in PATH (add to ~/.bashrc or ~/.zshrc)
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+IME detection on Linux supports: ibus, fcitx5, fcitx, xkb (auto-detected).
 
 #### Windows
 
@@ -70,8 +76,8 @@ git clone https://github.com/tarrragon/cc-statusline.git
 cd cc-statusline
 go build -o cc-statusline.exe .
 
-# Move to a directory in your PATH, for example:
-Move-Item cc-statusline.exe "$env:USERPROFILE\go\bin\"
+# Copy binary and helper to the same directory
+Copy-Item cc-statusline.exe, helper_windows.ps1 "$env:USERPROFILE\go\bin\"
 ```
 
 > **Note:** On Windows, Claude Code runs status line scripts through Git Bash. Make sure Git for Windows is installed.
@@ -133,13 +139,13 @@ Or with full path:
 **Line 1** — Main status:
 
 ```
-{project} | {branch} | {model} | {context bar} | {rate limits}
+{project} | {input method} | {model} | context: {N}% | 5h: {N}% ({HH:MM}) | week: {bar} {N}% ({weekday}{HH:MM})
 ```
 
-**Line 2** — Worktree alerts (only shown when dirty/unpushed exist):
+**Line 2** — Worktree alerts (only shown when any worktree has pending work):
 
 ```
-{branch} ~{uncommitted} ^{unpushed} | {branch2} ~{uncommitted}
+{branch} ~{uncommitted} ^{unpushed} v{unpulled} | {branch2} ~{uncommitted}
 ```
 
 ### Symbols
@@ -148,9 +154,12 @@ Or with full path:
 |--------|---------|-------|
 | `~N` | N uncommitted changes | Yellow |
 | `^N` | N unpushed commits | Magenta |
-| `(worktree)` | Currently in a worktree | Branch in magenta |
+| `vN` | N unpulled commits (remote ahead) | Cyan |
+| `CAPS` | Caps Lock is on | Red |
 
 ### Color Thresholds
+
+Applied to context window, 5-hour, and weekly rate limits:
 
 | Usage | Color |
 |-------|-------|
@@ -158,11 +167,38 @@ Or with full path:
 | 70-89% | Yellow |
 | >= 90% | Red |
 
+### Weekly Reset Time
+
+The weekly rate limit reset time uses Japanese weekday convention:
+
+| Symbol | Day |
+|--------|-----|
+| 日 | Sunday |
+| 月 | Monday |
+| 火 | Tuesday |
+| 水 | Wednesday |
+| 木 | Thursday |
+| 金 | Friday |
+| 土 | Saturday |
+
+## IME Helper
+
+Input method detection requires a platform-specific helper placed in the **same directory** as the `cc-statusline` binary (or in `PATH`):
+
+| Platform | Helper | How to build |
+|----------|--------|-------------|
+| macOS | `ime-helper` | `swiftc -O helper_darwin.swift -o ime-helper` |
+| Linux | `helper_linux.sh` | Included, no build needed |
+| Windows | `helper_windows.ps1` | Included, no build needed |
+
+If the helper is not found, IME detection is silently skipped.
+
 ## Requirements
 
 - Go 1.21+ (for building)
 - Git 2.0+
 - Claude Code
+- macOS: Xcode Command Line Tools (for building `ime-helper`)
 
 ## License
 
