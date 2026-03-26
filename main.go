@@ -248,7 +248,7 @@ func main() {
 	line1 += fmt.Sprintf("%s%s%s", bold, model, reset)
 
 	// Context percentage
-	line1 += sep + fmt.Sprintf("%sctx: %.0f%%%s", colorByPct(ctxPct), ctxPct, reset)
+	line1 += sep + fmt.Sprintf("%scontext: %.0f%%%s", colorByPct(ctxPct), ctxPct, reset)
 
 	// Rate limits
 	if rl := d.RateLimits; rl != nil {
