@@ -259,7 +259,8 @@ func main() {
 	if rl := d.RateLimits; rl != nil {
 		if r := rl.FiveHour; r != nil {
 			c := colorByPct(r.UsedPercentage)
-			line1 += sep + fmt.Sprintf("%s5h: %.0f%%%s %s%s%s", c, r.UsedPercentage, reset, dim, resetTime(r.ResetsAt), reset)
+			rt := time.Unix(r.ResetsAt, 0)
+			line1 += sep + fmt.Sprintf("%s5h: %.0f%%%s %s(%s)%s", c, r.UsedPercentage, reset, dim, rt.Format("15:04"), reset)
 		}
 		if r := rl.SevenDay; r != nil {
 			c := colorByPct(r.UsedPercentage)
