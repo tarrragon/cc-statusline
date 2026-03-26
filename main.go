@@ -178,6 +178,11 @@ func formatWorktreeAlert(wt WorktreeStatus) string {
 	return fmt.Sprintf("%s%s%s %s", dim, name, reset, strings.Join(parts, " "))
 }
 
+func weekday(t time.Time) string {
+	days := []string{"日", "月", "火", "水", "木", "金", "土"}
+	return days[t.Weekday()]
+}
+
 func main() {
 	var d StatusData
 	if err := json.NewDecoder(os.Stdin).Decode(&d); err != nil {
@@ -258,7 +263,8 @@ func main() {
 		}
 		if r := rl.SevenDay; r != nil {
 			c := colorByPct(r.UsedPercentage)
-			line1 += sep + fmt.Sprintf("%sweek: %s %.0f%%%s", c, bar(r.UsedPercentage, 5), r.UsedPercentage, reset)
+			rt := time.Unix(r.ResetsAt, 0)
+			line1 += sep + fmt.Sprintf("%sweek: %s %.0f%%%s %s(%s%s)%s", c, bar(r.UsedPercentage, 5), r.UsedPercentage, reset, dim, weekday(rt), rt.Format("15:04"), reset)
 		}
 	}
 
