@@ -48,6 +48,7 @@ type WorktreeStatus struct {
 	Branch     string
 	Dirty      int // uncommitted changes
 	Unpushed   int // unpushed commits
+	Behind     int // remote is ahead (unpulled commits)
 	IsCurrent  bool
 }
 
@@ -157,6 +158,9 @@ func getWorktreeStatuses(projectDir string) []WorktreeStatus {
 		// Unpushed commits
 		unpushed := git(wt.Path, "log", "--oneline", "@{upstream}..HEAD")
 		wt.Unpushed = countLines(unpushed)
+		// Unpulled commits (remote ahead)
+		behind := git(wt.Path, "log", "--oneline", "HEAD..@{upstream}")
+		wt.Behind = countLines(behind)
 	}
 
 	return statuses
@@ -174,6 +178,9 @@ func formatWorktreeAlert(wt WorktreeStatus) string {
 	}
 	if wt.Unpushed > 0 {
 		parts = append(parts, fmt.Sprintf("%s^%d%s", magenta, wt.Unpushed, reset))
+	}
+	if wt.Behind > 0 {
+		parts = append(parts, fmt.Sprintf("%sv%d%s", cyan, wt.Behind, reset))
 	}
 
 	return fmt.Sprintf("%s%s%s %s", dim, name, reset, strings.Join(parts, " "))
@@ -300,7 +307,7 @@ func main() {
 		worktrees := getWorktreeStatuses(projectDir)
 		var alerts []string
 		for _, wt := range worktrees {
-			if wt.Dirty > 0 || wt.Unpushed > 0 {
+			if wt.Dirty > 0 || wt.Unpushed > 0 || wt.Behind > 0 {
 				alerts = append(alerts, formatWorktreeAlert(wt))
 			}
 		}
