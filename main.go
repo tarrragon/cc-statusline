@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"runtime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -178,15 +179,29 @@ func formatWorktreeAlert(wt WorktreeStatus) string {
 	return fmt.Sprintf("%s%s%s %s", dim, name, reset, strings.Join(parts, " "))
 }
 
-func getIMEStatus() (string, bool) {
-	// Call macOS helper binary for input method + caps lock
-	// Try: same dir as binary, then PATH
+func findHelper(name string) string {
 	exePath, _ := os.Executable()
-	helperPath := filepath.Join(filepath.Dir(exePath), "ime-helper")
-	if _, err := os.Stat(helperPath); err != nil {
-		helperPath = "ime-helper" // fallback to PATH
+	p := filepath.Join(filepath.Dir(exePath), name)
+	if _, err := os.Stat(p); err == nil {
+		return p
 	}
-	cmd := exec.Command(helperPath)
+	return name // fallback to PATH
+}
+
+func getIMEStatus() (string, bool) {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command(findHelper("ime-helper"))
+	case "linux":
+		cmd = exec.Command("bash", findHelper("helper_linux.sh"))
+	case "windows":
+		cmd = exec.Command("powershell", "-NoProfile", "-File", findHelper("helper_windows.ps1"))
+	default:
+		return "", false
+	}
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = nil
