@@ -23,25 +23,68 @@ Zero external dependencies — only Go standard library and `git` CLI.
 
 ## Install
 
-```bash
-# Clone and build
-git clone https://github.com/tarrragon/cc-statusline.git
-cd cc-statusline
-go build -o cc-statusline .
-
-# Move to a permanent location
-cp cc-statusline ~/.local/bin/
-```
-
-Or with `go install`:
+### Option 1: `go install` (all platforms)
 
 ```bash
 go install github.com/tarrragon/cc-statusline@latest
 ```
 
+The binary will be placed in `$GOPATH/bin` (usually `~/go/bin`). Make sure it's in your `PATH`.
+
+### Option 2: Build from source
+
+#### macOS
+
+```bash
+git clone https://github.com/tarrragon/cc-statusline.git
+cd cc-statusline
+go build -o cc-statusline .
+
+# Install to a location in your PATH
+cp cc-statusline /usr/local/bin/
+# or
+cp cc-statusline ~/.local/bin/
+```
+
+#### Linux
+
+```bash
+git clone https://github.com/tarrragon/cc-statusline.git
+cd cc-statusline
+go build -o cc-statusline .
+
+# Install system-wide
+sudo cp cc-statusline /usr/local/bin/
+# or user-local
+mkdir -p ~/.local/bin
+cp cc-statusline ~/.local/bin/
+
+# Ensure ~/.local/bin is in PATH (add to ~/.bashrc or ~/.zshrc)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+#### Windows
+
+```powershell
+git clone https://github.com/tarrragon/cc-statusline.git
+cd cc-statusline
+go build -o cc-statusline.exe .
+
+# Move to a directory in your PATH, for example:
+Move-Item cc-statusline.exe "$env:USERPROFILE\go\bin\"
+```
+
+> **Note:** On Windows, Claude Code runs status line scripts through Git Bash. Make sure Git for Windows is installed.
+
+### Option 3: Download pre-built binary
+
+Check the [Releases](https://github.com/tarrragon/cc-statusline/releases) page for pre-built binaries for your platform.
+
 ## Configure Claude Code
 
-Add to `~/.claude/settings.json`:
+Add to your Claude Code settings (`~/.claude/settings.json`):
+
+### macOS / Linux
 
 ```json
 {
@@ -52,13 +95,35 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-Or use the full path:
+If the binary is not in your `PATH`, use the full path:
 
 ```json
 {
   "statusLine": {
     "type": "command",
     "command": "~/.local/bin/cc-statusline"
+  }
+}
+```
+
+### Windows
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "cc-statusline.exe"
+  }
+}
+```
+
+Or with full path:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:/Users/YourName/go/bin/cc-statusline.exe"
   }
 }
 ```
@@ -95,7 +160,7 @@ Or use the full path:
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.21+ (for building)
 - Git 2.0+
 - Claude Code
 
