@@ -455,7 +455,7 @@ func main() {
 		ctxPct = *d.ContextWindow.UsedPercentage
 	}
 
-	// === Line 1: main status ===
+	// === Line 1: identity information (project + env + IME + model) ===
 	line1 := ""
 	if projectName != "" {
 		line1 += fmt.Sprintf("%s%s%s", blue, projectName, reset)
@@ -488,27 +488,28 @@ func main() {
 	}
 	line1 += fmt.Sprintf("%s%s%s", bold, model, reset)
 
-	// Context percentage
-	line1 += sep + fmt.Sprintf("%scontext: %.0f%%%s", colorByPct(ctxPct), ctxPct, reset)
+	// === Line 2: usage information (context% + rate limits) ===
+	line2 := fmt.Sprintf("%scontext: %.0f%%%s", colorByPct(ctxPct), ctxPct, reset)
 
 	// Rate limits
 	if rl := d.RateLimits; rl != nil {
 		if r := rl.FiveHour; r != nil {
 			c := colorByPct(r.UsedPercentage)
 			rt := time.Unix(r.ResetsAt, 0)
-			line1 += sep + fmt.Sprintf("%s5h: %.0f%%%s %s(%s)%s", c, r.UsedPercentage, reset, dim, rt.Format("15:04"), reset)
+			line2 += sep + fmt.Sprintf("%s5h: %.0f%%%s %s(%s)%s", c, r.UsedPercentage, reset, dim, rt.Format("15:04"), reset)
 		}
 		if r := rl.SevenDay; r != nil {
 			c := colorByPct(r.UsedPercentage)
 			rt := time.Unix(r.ResetsAt, 0)
-			line1 += sep + fmt.Sprintf("%sweek: %s %.0f%%%s %s(%s%s)%s", c, bar(r.UsedPercentage, 5), r.UsedPercentage, reset, dim, weekday(rt), rt.Format("15:04"), reset)
+			line2 += sep + fmt.Sprintf("%sweek: %s %.0f%%%s %s(%s%s)%s", c, bar(r.UsedPercentage, 5), r.UsedPercentage, reset, dim, weekday(rt), rt.Format("15:04"), reset)
 		}
 	}
 
 	termWidth := getTermWidth()
 	fmt.Println(truncateToWidth(line1, termWidth))
+	fmt.Println(truncateToWidth(line2, termWidth))
 
-	// === Line 2: worktree alerts (only those with dirty/unpushed) ===
+	// === Line 3: worktree alerts (only those with dirty/unpushed) ===
 	if projectDir != "" {
 		worktrees := getWorktreeStatuses(projectDir)
 		var alerts []string
