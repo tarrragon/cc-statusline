@@ -11,10 +11,8 @@ import (
 	"runtime"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
-	"unsafe"
 )
 
 type StatusData struct {
@@ -71,19 +69,6 @@ const (
 )
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func getTermWidth() int {
-	type winsize struct {
-		Row, Col, Xpixel, Ypixel uint16
-	}
-	ws := &winsize{}
-	// Use stderr (fd 2) since stdin is a pipe for JSON input
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, 2, syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(ws)))
-	if errno != 0 || ws.Col == 0 {
-		return 120
-	}
-	return int(ws.Col)
-}
 
 // visibleLen returns the display width of a string, excluding ANSI escape codes.
 // CJK characters count as 2 columns.
