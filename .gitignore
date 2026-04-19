@@ -1,7 +1,9 @@
 # Binaries
 cc-statusline
+cc-statusline.exe
 statusline
 ime-helper
+*.exe
 
 # Local config
 .claude/
