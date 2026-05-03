@@ -497,14 +497,39 @@ func main() {
 	// === Line 3: worktree alerts (only those with dirty/unpushed) ===
 	if projectDir != "" {
 		worktrees := getWorktreeStatuses(projectDir)
-		var alerts []string
+		showAgent := os.Getenv("CC_STATUSLINE_SHOW_AGENT_WORKTREES") == "1"
+		var mainAlert string
+		var otherAlerts []string
 		for _, wt := range worktrees {
-			if wt.Dirty > 0 || wt.Unpushed > 0 || wt.Behind > 0 {
-				alerts = append(alerts, formatWorktreeAlert(wt))
+			if wt.Dirty == 0 && wt.Unpushed == 0 && wt.Behind == 0 {
+				continue
+			}
+			// Filter agent-* worktrees unless explicitly enabled.
+			// These are short-lived sandboxes spawned by background agents and
+			// would otherwise drown the main repo's dirty signal.
+			if !showAgent && isAgentWorktree(wt.Path) {
+				continue
+			}
+			alert := formatWorktreeAlert(wt)
+			if wt.Path == projectDir {
+				mainAlert = alert
+			} else {
+				otherAlerts = append(otherAlerts, alert)
 			}
 		}
+		var alerts []string
+		if mainAlert != "" {
+			alerts = append(alerts, mainAlert)
+		}
+		alerts = append(alerts, otherAlerts...)
 		if len(alerts) > 0 {
 			fmt.Println(truncateToWidth(strings.Join(alerts, sep), termWidth))
 		}
 	}
+}
+
+// isAgentWorktree reports whether a worktree path lives under
+// `.claude/worktrees/agent-` (background agent sandbox convention).
+func isAgentWorktree(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/.claude/worktrees/agent-")
 }
