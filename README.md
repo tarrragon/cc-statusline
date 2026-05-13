@@ -2,6 +2,11 @@
 
 A custom status line for [Claude Code](https://claude.ai/code), written in Go.
 
+The renderer also accepts Codex-style/generic JSON payloads so the same binary can
+be reused by wrappers or a future command-backed Codex status line. Codex CLI does
+not currently expose a Claude-style external status line command; see
+[Codex support](#codex-support) for the boundary.
+
 Displays real-time session info at the bottom of your terminal:
 
 ```
@@ -133,6 +138,46 @@ Or with full path:
     "command": "C:/Users/YourName/go/bin/cc-statusline.exe"
   }
 }
+```
+
+## Codex support
+
+Codex CLI currently exposes `tui.status_line` as a list of built-in item IDs, not
+as an external command hook. That means you cannot point Codex directly at
+`cc-statusline` in `~/.codex/config.toml` today.
+
+What this tool supports now is input compatibility: if a wrapper, tmux segment,
+or future Codex command-backed status line passes Codex-style JSON on stdin, the
+same renderer can display it without breaking the Claude Code path.
+
+Supported generic/Codex-style fields:
+
+```json
+{
+  "model": "gpt-5.4",
+  "reasoning_effort": "medium",
+  "cwd": "/repo/subdir",
+  "project_root": "/repo",
+  "context": {
+    "remaining_percent": 75
+  },
+  "limits": {
+    "five_hour": {
+      "used_percent": 16,
+      "resets_at": 1778668800
+    },
+    "weekly": {
+      "used_percent": 12,
+      "resets_at": 1779268800
+    }
+  }
+}
+```
+
+Manual smoke test:
+
+```bash
+printf '%s\n' '{"model":"gpt-5.4","reasoning_effort":"medium","project_root":"/tmp/repo","context":{"remaining_percent":75}}' | cc-statusline
 ```
 
 ## Status Line Format

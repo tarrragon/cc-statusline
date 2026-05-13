@@ -7,9 +7,9 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,28 +17,105 @@ import (
 )
 
 type StatusData struct {
-	Model         ModelInfo     `json:"model"`
-	ContextWindow ContextWindow `json:"context_window"`
-	RateLimits    *RateLimits   `json:"rate_limits"`
-	Workspace     *Workspace    `json:"workspace"`
+	Model           ModelInfo      `json:"model"`
+	ReasoningEffort string         `json:"reasoning_effort"`
+	ContextWindow   ContextWindow  `json:"context_window"`
+	Context         *ContextWindow `json:"context"`
+	RateLimits      *RateLimits    `json:"rate_limits"`
+	Limits          *RateLimits    `json:"limits"`
+	Workspace       *Workspace     `json:"workspace"`
+	CWD             string         `json:"cwd"`
+	ProjectRoot     string         `json:"project_root"`
 }
 
 type ModelInfo struct {
+	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
 }
 
+func (m *ModelInfo) UnmarshalJSON(data []byte) error {
+	var label string
+	if err := json.Unmarshal(data, &label); err == nil {
+		m.DisplayName = label
+		return nil
+	}
+
+	type modelObject struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+		Name        string `json:"name"`
+	}
+	var obj modelObject
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	m.ID = obj.ID
+	m.DisplayName = obj.DisplayName
+	if m.DisplayName == "" {
+		m.DisplayName = obj.Name
+	}
+	if m.DisplayName == "" {
+		m.DisplayName = obj.ID
+	}
+	return nil
+}
+
 type ContextWindow struct {
-	UsedPercentage *float64 `json:"used_percentage"`
+	UsedPercentage   *float64 `json:"used_percentage"`
+	UsedPercent      *float64 `json:"used_percent"`
+	RemainingPercent *float64 `json:"remaining_percent"`
+}
+
+func (c ContextWindow) Used() float64 {
+	switch {
+	case c.UsedPercentage != nil:
+		return *c.UsedPercentage
+	case c.UsedPercent != nil:
+		return *c.UsedPercent
+	case c.RemainingPercent != nil:
+		return 100 - *c.RemainingPercent
+	default:
+		return 0
+	}
 }
 
 type RateLimits struct {
 	FiveHour *RateLimit `json:"five_hour"`
 	SevenDay *RateLimit `json:"seven_day"`
+	Weekly   *RateLimit `json:"weekly"`
+}
+
+func (r *RateLimits) Week() *RateLimit {
+	if r == nil {
+		return nil
+	}
+	if r.SevenDay != nil {
+		return r.SevenDay
+	}
+	return r.Weekly
 }
 
 type RateLimit struct {
-	UsedPercentage float64 `json:"used_percentage"`
-	ResetsAt       int64   `json:"resets_at"`
+	UsedPercentage   float64  `json:"used_percentage"`
+	UsedPercent      *float64 `json:"used_percent"`
+	RemainingPercent *float64 `json:"remaining_percent"`
+	ResetsAt         int64    `json:"resets_at"`
+}
+
+func (r *RateLimit) UnmarshalJSON(data []byte) error {
+	type rateLimit RateLimit
+	var raw rateLimit
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*r = RateLimit(raw)
+	switch {
+	case r.UsedPercent != nil:
+		r.UsedPercentage = *r.UsedPercent
+	case r.RemainingPercent != nil:
+		r.UsedPercentage = 100 - *r.RemainingPercent
+	}
+	return nil
 }
 
 type Workspace struct {
@@ -47,12 +124,12 @@ type Workspace struct {
 }
 
 type WorktreeStatus struct {
-	Path       string
-	Branch     string
-	Dirty      int // uncommitted changes
-	Unpushed   int // unpushed commits
-	Behind     int // remote is ahead (unpulled commits)
-	IsCurrent  bool
+	Path      string
+	Branch    string
+	Dirty     int // uncommitted changes
+	Unpushed  int // unpushed commits
+	Behind    int // remote is ahead (unpulled commits)
+	IsCurrent bool
 }
 
 const (
@@ -446,6 +523,56 @@ func weekday(t time.Time) string {
 	return days[t.Weekday()]
 }
 
+func (d StatusData) projectDir() string {
+	if d.Workspace != nil {
+		if d.Workspace.ProjectDir != "" {
+			return d.Workspace.ProjectDir
+		}
+		if d.Workspace.CurrentDir != "" {
+			return d.Workspace.CurrentDir
+		}
+	}
+	if d.ProjectRoot != "" {
+		return d.ProjectRoot
+	}
+	if d.CWD != "" {
+		return d.CWD
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return wd
+}
+
+func (d StatusData) modelLabel() string {
+	model := d.Model.DisplayName
+	if model == "" {
+		model = d.Model.ID
+	}
+	if model == "" {
+		model = "?"
+	}
+	if d.ReasoningEffort != "" && !strings.Contains(model, d.ReasoningEffort) {
+		model += " " + d.ReasoningEffort
+	}
+	return model
+}
+
+func (d StatusData) contextUsedPercentage() float64 {
+	if d.Context != nil {
+		return d.Context.Used()
+	}
+	return d.ContextWindow.Used()
+}
+
+func (d StatusData) rateLimits() *RateLimits {
+	if d.RateLimits != nil {
+		return d.RateLimits
+	}
+	return d.Limits
+}
+
 func main() {
 	var d StatusData
 	if err := json.NewDecoder(os.Stdin).Decode(&d); err != nil {
@@ -458,24 +585,16 @@ func main() {
 	// Project name
 	projectDir := ""
 	projectName := ""
-	if d.Workspace != nil {
-		projectDir = d.Workspace.ProjectDir
-		if projectDir != "" {
-			projectName = filepath.Base(projectDir)
-		}
+	projectDir = d.projectDir()
+	if projectDir != "" {
+		projectName = filepath.Base(projectDir)
 	}
 
 	// Model
-	model := d.Model.DisplayName
-	if model == "" {
-		model = "?"
-	}
+	model := d.modelLabel()
 
 	// Context
-	ctxPct := 0.0
-	if d.ContextWindow.UsedPercentage != nil {
-		ctxPct = *d.ContextWindow.UsedPercentage
-	}
+	ctxPct := d.contextUsedPercentage()
 
 	// === Line 1: identity information (project + env + IME + model) ===
 	line1 := ""
@@ -514,13 +633,13 @@ func main() {
 	line2 := fmt.Sprintf("%scontext: %.0f%%%s", colorByPct(ctxPct), ctxPct, reset)
 
 	// Rate limits
-	if rl := d.RateLimits; rl != nil {
+	if rl := d.rateLimits(); rl != nil {
 		if r := rl.FiveHour; r != nil {
 			c := colorByPct(r.UsedPercentage)
 			rt := time.Unix(r.ResetsAt, 0)
 			line2 += sep + fmt.Sprintf("%s5h: %.0f%%%s %s(%s)%s", c, r.UsedPercentage, reset, dim, rt.Format("15:04"), reset)
 		}
-		if r := rl.SevenDay; r != nil {
+		if r := rl.Week(); r != nil {
 			c := colorByPct(r.UsedPercentage)
 			rt := time.Unix(r.ResetsAt, 0)
 			line2 += sep + fmt.Sprintf("%sweek: %s %.0f%%%s %s(%s%s)%s", c, bar(r.UsedPercentage, 5), r.UsedPercentage, reset, dim, weekday(rt), rt.Format("15:04"), reset)
