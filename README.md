@@ -17,7 +17,8 @@ main ~2 ^3 | feat-branch ~8 v2
 - **Model name** — current Claude model
 - **Context window** — usage percentage with color coding
 - **Rate limits** — 5-hour usage with reset time, weekly usage with progress bar and Japanese weekday reset time
-- **Multi-worktree alerts** — scans ALL worktrees for:
+- **Current branch** — the branch of the worktree you're in is always shown, so it stays visible right after switching branches
+- **Multi-worktree alerts** — scans ALL worktrees and flags any with:
   - Uncommitted changes (`~N`)
   - Unpushed commits (`^N`)
   - Unpulled commits from remote (`vN`)
@@ -142,11 +143,15 @@ Or with full path:
 {project} | {input method} | {model} | context: {N}% | 5h: {N}% ({HH:MM}) | week: {bar} {N}% ({weekday}{HH:MM})
 ```
 
-**Line 2** — Worktree alerts (only shown when any worktree has pending work):
+**Line 2** — Branch / worktree status:
 
 ```
-{branch} ~{uncommitted} ^{unpushed} v{unpulled} | {branch2} ~{uncommitted}
+{branch} ~{uncommitted} ^{unpushed} v{unpulled} | {other-branch} ~{uncommitted}
 ```
+
+- The worktree you are **currently in** is always shown — just its branch name when clean, with `~`/`^`/`v` counts appended when it has pending work. The current branch therefore stays visible even right after a `git switch`.
+- **Other** worktrees appear only when they have pending work, listed after the current one. (Background-agent sandboxes under `.claude/worktrees/agent-*` are hidden unless `CC_STATUSLINE_SHOW_AGENT_WORKTREES=1`.)
+- Unpushed (`^N`) is counted even on branches with **no upstream**: commits not present on any remote-tracking ref count as unpushed. A purely local repo with no remote shows no count (nothing to push to).
 
 ### Symbols
 
