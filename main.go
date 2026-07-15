@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -216,6 +217,27 @@ func countLines(s string) int {
 	return len(strings.Split(s, "\n"))
 }
 
+// atoiCount parses the integer output of `git rev-list --count` (e.g. "3").
+// Returns 0 on empty/garbage so a failed git call degrades to "nothing".
+func atoiCount(s string) int {
+	n, _ := strconv.Atoi(strings.TrimSpace(s))
+	return n
+}
+
+// samePath reports whether two filesystem paths point at the same directory,
+// tolerating symlink differences (e.g. macOS /tmp vs /private/tmp).
+func samePath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ra, ea := filepath.EvalSymlinks(a)
+	rb, eb := filepath.EvalSymlinks(b)
+	return ea == nil && eb == nil && ra == rb
+}
+
 func getWorktreeStatuses(projectDir string) []WorktreeStatus {
 	raw := git(projectDir, "worktree", "list", "--porcelain")
 	if raw == "" {
@@ -250,12 +272,22 @@ func getWorktreeStatuses(projectDir string) []WorktreeStatus {
 		// Uncommitted changes
 		porcelain := git(wt.Path, "status", "--porcelain")
 		wt.Dirty = countLines(porcelain)
-		// Unpushed commits
-		unpushed := git(wt.Path, "log", "--oneline", "@{upstream}..HEAD")
-		wt.Unpushed = countLines(unpushed)
-		// Unpulled commits (remote ahead)
-		behind := git(wt.Path, "log", "--oneline", "HEAD..@{upstream}")
-		wt.Behind = countLines(behind)
+		// Unpushed / unpulled commits.
+		// The naive "@{upstream}..HEAD" errors out (fatal: no upstream) on a
+		// branch with no tracking ref — git() swallows the error, so a freshly
+		// created branch's commits used to count as 0 unpushed. Handle the three
+		// cases explicitly instead:
+		if git(wt.Path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}") != "" {
+			// Has an upstream: compare against it.
+			wt.Unpushed = atoiCount(git(wt.Path, "rev-list", "--count", "@{upstream}..HEAD"))
+			wt.Behind = atoiCount(git(wt.Path, "rev-list", "--count", "HEAD..@{upstream}"))
+		} else if git(wt.Path, "remote") != "" {
+			// No upstream but a remote exists: count commits not on ANY
+			// remote-tracking ref as unpushed. Nothing to compare "behind" against.
+			wt.Unpushed = atoiCount(git(wt.Path, "rev-list", "--count", "HEAD", "--not", "--remotes"))
+			wt.Behind = 0
+		}
+		// else: purely local repo (no remote) — nowhere to push, leave both 0.
 	}
 
 	return statuses
@@ -278,6 +310,11 @@ func formatWorktreeAlert(wt WorktreeStatus) string {
 		parts = append(parts, fmt.Sprintf("%sv%d%s", cyan, wt.Behind, reset))
 	}
 
+	// A clean current worktree has no parts — show just the branch name, no
+	// trailing separator/space.
+	if len(parts) == 0 {
+		return fmt.Sprintf("%s%s%s", dim, name, reset)
+	}
 	return fmt.Sprintf("%s%s%s %s", dim, name, reset, strings.Join(parts, " "))
 }
 
@@ -494,13 +531,38 @@ func main() {
 	fmt.Println(truncateToWidth(line1, termWidth))
 	fmt.Println(truncateToWidth(line2, termWidth))
 
-	// === Line 3: worktree alerts (only those with dirty/unpushed) ===
+	// === Line 3: worktree alerts ===
+	// The worktree you're currently in is ALWAYS shown (even when clean) so the
+	// current branch is always visible after a switch. Other worktrees only
+	// surface when they have dirty/unpushed/unpulled work.
 	if projectDir != "" {
 		worktrees := getWorktreeStatuses(projectDir)
+
+		// Mark the worktree that holds current_dir (fall back to project_dir).
+		// Match on the worktree root, tolerating symlinked paths.
+		cwd := ""
+		if d.Workspace != nil {
+			cwd = d.Workspace.CurrentDir
+		}
+		if cwd == "" {
+			cwd = projectDir
+		}
+		currentRoot := git(cwd, "rev-parse", "--show-toplevel")
+		for i := range worktrees {
+			if samePath(worktrees[i].Path, currentRoot) {
+				worktrees[i].IsCurrent = true
+			}
+		}
+
 		showAgent := os.Getenv("CC_STATUSLINE_SHOW_AGENT_WORKTREES") == "1"
-		var mainAlert string
+		var currentAlert string
 		var otherAlerts []string
 		for _, wt := range worktrees {
+			if wt.IsCurrent {
+				// Always shown — bypasses both the clean-skip and agent filters.
+				currentAlert = formatWorktreeAlert(wt)
+				continue
+			}
 			if wt.Dirty == 0 && wt.Unpushed == 0 && wt.Behind == 0 {
 				continue
 			}
@@ -510,16 +572,11 @@ func main() {
 			if !showAgent && isAgentWorktree(wt.Path) {
 				continue
 			}
-			alert := formatWorktreeAlert(wt)
-			if wt.Path == projectDir {
-				mainAlert = alert
-			} else {
-				otherAlerts = append(otherAlerts, alert)
-			}
+			otherAlerts = append(otherAlerts, formatWorktreeAlert(wt))
 		}
 		var alerts []string
-		if mainAlert != "" {
-			alerts = append(alerts, mainAlert)
+		if currentAlert != "" {
+			alerts = append(alerts, currentAlert)
 		}
 		alerts = append(alerts, otherAlerts...)
 		if len(alerts) > 0 {
