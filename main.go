@@ -673,22 +673,14 @@ func main() {
 			}
 		}
 
-		showAgent := os.Getenv("CC_STATUSLINE_SHOW_AGENT_WORKTREES") == "1"
 		var currentAlert string
 		var otherAlerts []string
 		for _, wt := range worktrees {
 			if wt.IsCurrent {
-				// Always shown — bypasses both the clean-skip and agent filters.
 				currentAlert = formatWorktreeAlert(wt)
 				continue
 			}
 			if wt.Dirty == 0 && wt.Unpushed == 0 && wt.Behind == 0 {
-				continue
-			}
-			// Filter agent-* worktrees unless explicitly enabled.
-			// These are short-lived sandboxes spawned by background agents and
-			// would otherwise drown the main repo's dirty signal.
-			if !showAgent && isAgentWorktree(wt.Path) {
 				continue
 			}
 			otherAlerts = append(otherAlerts, formatWorktreeAlert(wt))
@@ -704,8 +696,3 @@ func main() {
 	}
 }
 
-// isAgentWorktree reports whether a worktree path lives under
-// `.claude/worktrees/agent-` (background agent sandbox convention).
-func isAgentWorktree(path string) bool {
-	return strings.Contains(filepath.ToSlash(path), "/.claude/worktrees/agent-")
-}
