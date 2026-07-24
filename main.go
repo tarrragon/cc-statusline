@@ -344,27 +344,31 @@ func getWorktreeStatuses(projectDir string) []WorktreeStatus {
 		statuses = append(statuses, current)
 	}
 
+	// Detect the default branch from the primary worktree (first entry).
+	mainBranch := "main"
+	if len(statuses) > 0 {
+		b := statuses[0].Branch
+		if b != "" && b != "(bare)" && b != "(detached)" {
+			mainBranch = b
+		}
+	}
+
 	for i := range statuses {
 		wt := &statuses[i]
-		// Uncommitted changes
 		porcelain := git(wt.Path, "status", "--porcelain")
 		wt.Dirty = countLines(porcelain)
-		// Unpushed / unpulled commits.
-		// The naive "@{upstream}..HEAD" errors out (fatal: no upstream) on a
-		// branch with no tracking ref — git() swallows the error, so a freshly
-		// created branch's commits used to count as 0 unpushed. Handle the three
-		// cases explicitly instead:
+
 		if git(wt.Path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}") != "" {
-			// Has an upstream: compare against it.
 			wt.Unpushed = atoiCount(git(wt.Path, "rev-list", "--count", "@{upstream}..HEAD"))
 			wt.Behind = atoiCount(git(wt.Path, "rev-list", "--count", "HEAD..@{upstream}"))
+		} else if wt.Branch != mainBranch {
+			// No upstream, not the main branch: count unmerged-to-main.
+			wt.Unpushed = atoiCount(git(wt.Path, "rev-list", "--count", mainBranch+"..HEAD"))
+			wt.Behind = atoiCount(git(wt.Path, "rev-list", "--count", "HEAD.."+mainBranch))
 		} else if git(wt.Path, "remote") != "" {
-			// No upstream but a remote exists: count commits not on ANY
-			// remote-tracking ref as unpushed. Nothing to compare "behind" against.
 			wt.Unpushed = atoiCount(git(wt.Path, "rev-list", "--count", "HEAD", "--not", "--remotes"))
 			wt.Behind = 0
 		}
-		// else: purely local repo (no remote) — nowhere to push, leave both 0.
 	}
 
 	return statuses
