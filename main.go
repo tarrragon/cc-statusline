@@ -126,9 +126,10 @@ type Workspace struct {
 type WorktreeStatus struct {
 	Path      string
 	Branch    string
-	Dirty     int // uncommitted changes
-	Unpushed  int // unpushed commits
-	Behind    int // remote is ahead (unpulled commits)
+	Label     string // human-readable label (e.g. ticket ID) extracted from commits
+	Dirty     int    // uncommitted changes
+	Unpushed  int    // unpushed commits
+	Behind    int    // remote is ahead (unpulled commits)
 	IsCurrent bool
 }
 
@@ -147,6 +148,7 @@ const (
 )
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+var ticketRe = regexp.MustCompile(`\b\d+\.\d+\.\d+-(W\d+-\d+(?:\.\d+)?)\b`)
 
 // visibleLen returns the display width of a string, excluding ANSI escape codes.
 // CJK characters count as 2 columns.
@@ -371,12 +373,24 @@ func getWorktreeStatuses(projectDir string) []WorktreeStatus {
 		}
 	}
 
+	for i := range statuses {
+		wt := &statuses[i]
+		if strings.HasPrefix(wt.Branch, "worktree-agent-") {
+			subject := git(wt.Path, "log", "-1", "--format=%s")
+			if m := ticketRe.FindStringSubmatch(subject); len(m) > 1 {
+				wt.Label = m[1]
+			}
+		}
+	}
+
 	return statuses
 }
 
 func formatWorktreeAlert(wt WorktreeStatus) string {
 	name := filepath.Base(wt.Path)
-	if wt.Branch != "" {
+	if wt.Label != "" {
+		name = wt.Label
+	} else if wt.Branch != "" {
 		name = wt.Branch
 	}
 
